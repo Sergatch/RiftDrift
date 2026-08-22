@@ -50,6 +50,10 @@ type PointerDrag<Id> = {
 };
 type CommandPointerDrag = PointerDrag<string> & { sectionId: string };
 
+function fileName(path: string) {
+  return path.split(/[\\/]/).pop() || 'library';
+}
+
 const legacyStorageKey = 'riftdrift.commands.v1';
 const activeLibraryPathKey = 'riftdrift.active-library-path.v1';
 const lastSectionId = 'last';
@@ -418,6 +422,7 @@ export default function App() {
   const detachedSession = Number(url.searchParams.get('session')) || null;
   const detachedName = url.searchParams.get('name') || 'detached';
   const isDetached = Boolean(detachedSession);
+  const libraryShortcut = /Macintosh|Mac OS X/.test(navigator.userAgent) ? '⌘L' : 'Ctrl+L';
   const terminalRef = useRef<TerminalPaneHandle>(null);
   const toastTimer = useRef<number | undefined>(undefined);
   const draggedTabIdRef = useRef<number | null>(null);
@@ -495,7 +500,7 @@ export default function App() {
       setLibraryError('');
       setSaveMenuCommandId(null);
       localStorage.setItem(activeLibraryPathKey, result.path);
-      if (announce) flash(`Opened ${result.path.split('/').pop() ?? 'library'}`);
+      if (announce) flash(`Opened ${fileName(result.path)}`);
     } catch (error) {
       const message = String(error);
       setLibraryError(message);
@@ -785,7 +790,7 @@ export default function App() {
       setLibraryReady(true);
       setLibraryError('');
       localStorage.setItem(activeLibraryPathKey, savedPath);
-      flash(`Saved ${savedPath.split('/').pop() ?? 'library'}`);
+      flash(`Saved ${fileName(savedPath)}`);
     } catch (error) {
       flash(`Could not save library: ${String(error)}`, 'error');
     }
@@ -1140,7 +1145,7 @@ export default function App() {
             <span className="brand-status">NATIVE</span>
           </div>
           <div className="title-actions">
-            <span className="connection"><i /> zsh</span>
+            <span className="connection"><i /> shell</span>
             <button
               className={`library-trigger ${sidebarOpen ? 'active' : ''}`}
               onClick={() => setSidebarOpen((value) => !value)}
@@ -1149,7 +1154,7 @@ export default function App() {
             >
               <span className="library-lines"><i /><i /><i /></span>
               <span className="library-label">Library</span>
-              <kbd>⌘L</kbd>
+              <kbd>{libraryShortcut}</kbd>
             </button>
           </div>
         </header>
@@ -1221,7 +1226,7 @@ export default function App() {
                 />
               ) : (
                 <div className="terminal-loading">
-                  {isTauriRuntime ? 'Starting zsh…' : 'Native PTY starts with npm run dev.'}
+                  {isTauriRuntime ? 'Starting shell…' : 'Native PTY starts with npm run dev.'}
                 </div>
               )}
             </div>
@@ -1235,7 +1240,7 @@ export default function App() {
                   {libraryError
                     ? 'File unavailable'
                     : libraryReady
-                      ? libraryPath.split('/').pop()
+                      ? fileName(libraryPath)
                       : 'Loading file…'}
                 </small>
               </div>

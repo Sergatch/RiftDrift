@@ -5,7 +5,6 @@ use std::{
     env, fs,
     io::{Read, Write},
     path::{Path, PathBuf},
-    process::Command,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc, Mutex,
@@ -13,6 +12,9 @@ use std::{
     thread,
 };
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+
+#[cfg(target_os = "macos")]
+use std::process::Command;
 
 const MAX_SCROLLBACK_BYTES: usize = 2 * 1024 * 1024;
 const LIBRARY_FILE_NAME: &str = "RiftDrift Library.riftdrift";
@@ -129,6 +131,54 @@ fn read_library(path: &Path) -> Result<Option<String>, String> {
     }
 }
 
+fn user_home_directory() -> PathBuf {
+    #[cfg(target_os = "windows")]
+    const HOME_VARIABLES: &[&str] = &["USERPROFILE", "HOME"];
+    #[cfg(not(target_os = "windows"))]
+    const HOME_VARIABLES: &[&str] = &["HOME"];
+
+    HOME_VARIABLES
+        .iter()
+        .find_map(|name| env::var(name).ok().filter(|value| !value.trim().is_empty()))
+        .map(PathBuf::from)
+        .or_else(|| env::current_dir().ok())
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
+fn shell_command() -> (String, Vec<&'static str>) {
+    #[cfg(target_os = "windows")]
+    {
+        let shell = env::var("SHELL")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| {
+                env::var("COMSPEC")
+                    .ok()
+                    .filter(|value| !value.trim().is_empty())
+            })
+            .unwrap_or_else(|| "powershell.exe".to_string());
+        let name = Path::new(&shell)
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .unwrap_or_default();
+        let arguments =
+            if name.eq_ignore_ascii_case("powershell") || name.eq_ignore_ascii_case("pwsh") {
+                vec!["-NoLogo"]
+            } else {
+                Vec::new()
+            };
+        (shell, arguments)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        (
+            env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string()),
+            vec!["-l"],
+        )
+    }
+}
+
 #[tauri::command]
 fn load_library_file(app: tauri::AppHandle, path: Option<String>) -> Result<LibraryFile, String> {
     let resolved = resolve_library_path(&app, path)?;
@@ -157,6 +207,18 @@ fn save_library_file(
     let temporary = resolved.with_extension("riftdrift.tmp");
     fs::write(&temporary, contents)
         .map_err(|error| format!("Could not write {}: {error}", temporary.display()))?;
+
+    // Unlike Unix, Windows does not replace an existing file with fs::rename.
+    // Keep the fully-written temporary file until the destination can be removed.
+    #[cfg(target_os = "windows")]
+    match fs::remove_file(&resolved) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(format!("Could not replace {}: {error}", resolved.display()));
+        }
+    }
+
     fs::rename(&temporary, &resolved)
         .map_err(|error| format!("Could not replace {}: {error}", resolved.display()))?;
     Ok(resolved.to_string_lossy().into_owned())
@@ -249,16 +311,18 @@ fn create_terminal(
         })
         .map_err(|error| format!("Could not open PTY: {error}"))?;
 
-    let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+    let (shell, shell_arguments) = shell_command();
     let uses_zsh = Path::new(&shell)
-        .file_name()
-        .is_some_and(|name| name == "zsh");
-    let home_directory = env::var("HOME").unwrap_or_else(|_| "/".to_string());
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.eq_ignore_ascii_case("zsh"));
+    let home_directory = user_home_directory();
     let working_directory = cwd
         .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
         .unwrap_or_else(|| home_directory.clone());
     let mut command = CommandBuilder::new(shell);
-    command.arg("-l");
+    command.args(shell_arguments);
     command.cwd(working_directory);
     command.env("TERM", "xterm-256color");
     command.env("COLORTERM", "truecolor");
@@ -277,7 +341,7 @@ fn create_terminal(
                 let user_zdotdir = env::var("ZDOTDIR")
                     .ok()
                     .filter(|value| !value.trim().is_empty())
-                    .unwrap_or(home_directory);
+                    .unwrap_or_else(|| home_directory.to_string_lossy().into_owned());
                 command.env("RIFTDRIFT_USER_ZDOTDIR", user_zdotdir);
                 command.env(
                     "RIFTDRIFT_ZSH_HIGHLIGHTER",
@@ -536,7 +600,7 @@ pub fn run() {
     });
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "macos"))]
 mod tests {
     use super::write_zsh_integration;
     use portable_pty::{native_pty_system, CommandBuilder, PtySize};

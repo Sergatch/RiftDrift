@@ -1,10 +1,10 @@
 # RiftDrift
 
-RiftDrift is a native macOS terminal with tabs, detachable windows, command history, custom library sections, and portable `.riftdrift` library files.
+RiftDrift is a native macOS and Windows terminal with tabs, detachable windows, command history, custom library sections, and portable `.riftdrift` library files.
 
-The active library is saved automatically. Use **Save as** to make a portable copy and **Open** (or open the registered `.riftdrift` file in Finder) to restore all sections and command history on another Mac.
+The active library is saved automatically. Use **Save as** to make a portable copy and **Open** to restore all sections and command history on another computer.
 
-## Build a DMG
+## Build the desktop app
 
 Install dependencies once:
 
@@ -12,13 +12,15 @@ Install dependencies once:
 npm install
 ```
 
-Then build the macOS installer with one command:
+Then build the installers for the current operating system:
 
 ```bash
 npm run build
 ```
 
-The DMG is written to `src-tauri/target/release/bundle/dmg/`.
+On macOS this creates an app bundle and DMG. On Windows it creates NSIS (`.exe`) and MSI (`.msi`) installers. To select a platform explicitly, use `npm run build:mac` or `npm run build:windows` on that operating system.
+
+Windows builds can also be produced from any computer with the **Build Windows** GitHub Actions workflow. Its installers are available as a workflow artifact.
 
 ## Development
 
@@ -28,4 +30,4 @@ npm run dev
 
 This starts the desktop frontend and opens the native RiftDrift application. The original browser prototype remains available with `npm run site:dev`.
 
-See [BUILDING.md](BUILDING.md) for signing, notarization, universal builds, and release details.
+See [BUILDING.md](BUILDING.md) for platform prerequisites, CI artifacts, signing, notarization, universal builds, and release details.

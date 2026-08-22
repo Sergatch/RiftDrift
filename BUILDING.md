@@ -1,11 +1,41 @@
-# Building RiftDrift for macOS
+# Building RiftDrift
+
+Install the shared prerequisites first:
+
+- Node.js 22.13 or newer
+- Rust 1.77.2 or newer
+
+Then install the JavaScript dependencies:
+
+```bash
+npm ci
+```
+
+## Windows
+
+Windows installers must be built on Windows. Install the Microsoft C++ Build Tools with the **Desktop development with C++** workload and Microsoft Edge WebView2, then run:
+
+```powershell
+npm run build:windows
+```
+
+Artifacts:
+
+- `src-tauri/target/release/bundle/nsis/RiftDrift_*-setup.exe`
+- `src-tauri/target/release/bundle/msi/RiftDrift_*.msi`
+
+The repository also includes a **Build Windows** GitHub Actions workflow. Run it manually from the Actions tab, or push a tag matching `v*`. Download the `RiftDrift-Windows-x64` artifact after the job finishes. This is the supported way to produce Windows installers while developing on macOS or Linux.
+
+The generated installers are unsigned. Windows may show a SmartScreen warning until the executable and installers are signed with a trusted code-signing certificate.
+
+## macOS
 
 ## Local DMG
 
 The default build is ad-hoc signed and is intended for local installation and testing:
 
 ```bash
-npm run build
+npm run build:mac
 ```
 
 Artifact:
@@ -40,7 +70,7 @@ To distribute the DMG to other users without a Gatekeeper warning, install a `De
 
 ```bash
 export APPLE_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)"
-npm run build
+npm run build:mac
 ```
 
 Tauri can notarize the same build when Apple credentials are present. Use either an App Store Connect API key (`APPLE_API_ISSUER`, `APPLE_API_KEY`, `APPLE_API_KEY_PATH`) or Apple ID credentials (`APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`). Never commit these values to the repository.
