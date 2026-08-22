@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import type { DragEvent as ReactDragEvent, FormEvent, MouseEvent as ReactMouseEvent } from 'react';
+import type { FormEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { FitAddon } from '@xterm/addon-fit';
@@ -38,6 +38,13 @@ type CommandEditor = { commandId: string; name: string };
 type Toast = { message: string; tone: 'success' | 'error' | 'warning' };
 type DropPosition = 'before' | 'after';
 type DropTarget<Id> = { id: Id; position: DropPosition };
+type PointerDrag<Id> = {
+  id: Id;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  dragging: boolean;
+};
 
 const legacyStorageKey = 'riftdrift.commands.v1';
 const activeLibraryPathKey = 'riftdrift.active-library-path.v1';
@@ -389,9 +396,14 @@ export default function App() {
   const isDetached = Boolean(detachedSession);
   const terminalRef = useRef<TerminalPaneHandle>(null);
   const toastTimer = useRef<number | undefined>(undefined);
-  const tabDropHandled = useRef(false);
   const draggedTabIdRef = useRef<number | null>(null);
   const draggedSectionIdRef = useRef<string | null>(null);
+  const tabDropTargetRef = useRef<DropTarget<number> | null>(null);
+  const sectionDropTargetRef = useRef<DropTarget<string> | null>(null);
+  const tabPointerDragRef = useRef<PointerDrag<number> | null>(null);
+  const sectionPointerDragRef = useRef<PointerDrag<string> | null>(null);
+  const suppressTabClickRef = useRef(false);
+  const suppressSectionClickRef = useRef(false);
   const [library, setLibrary] = useState<LibraryDocument>(emptyLibraryDocument);
   const [libraryPath, setLibraryPath] = useState(isTauriRuntime ? '' : 'RiftDrift Library.riftdrift');
   const [libraryReady, setLibraryReady] = useState(!isTauriRuntime);
@@ -606,46 +618,83 @@ export default function App() {
     }
   }
 
-  function handleTabDragStart(event: ReactDragEvent<HTMLButtonElement>, tabId: number) {
-    if (isDetached) return;
-    tabDropHandled.current = false;
-    draggedTabIdRef.current = tabId;
-    setDraggedTabId(tabId);
-    setTabDropTarget(null);
-    event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData('text/riftdrift-tab', String(tabId));
-    event.dataTransfer.setData('text/plain', String(tabId));
+  function updateTabDropTarget(target: DropTarget<number> | null) {
+    tabDropTargetRef.current = target;
+    setTabDropTarget((current) => (
+      current?.id === target?.id && current?.position === target?.position ? current : target
+    ));
   }
 
-  function handleTabDragOver(event: ReactDragEvent<HTMLButtonElement>, targetId: number) {
+  function trackTabDropTarget(clientX: number, clientY: number) {
     const draggedId = draggedTabIdRef.current;
-    if (draggedId === null || draggedId === targetId) return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
-    const bounds = event.currentTarget.getBoundingClientRect();
-    const position = event.clientX < bounds.left + bounds.width / 2 ? 'before' : 'after';
-    setTabDropTarget({ id: targetId, position });
+    if (draggedId === null || (clientX === 0 && clientY === 0)) return;
+    const target = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>('[data-tab-id]');
+    if (!target) {
+      updateTabDropTarget(null);
+      return;
+    }
+    const targetId = Number(target.dataset.tabId);
+    if (!Number.isFinite(targetId) || targetId === draggedId) {
+      updateTabDropTarget(null);
+      return;
+    }
+    const bounds = target.getBoundingClientRect();
+    updateTabDropTarget({
+      id: targetId,
+      position: clientX < bounds.left + bounds.width / 2 ? 'before' : 'after',
+    });
   }
 
-  function handleTabDrop(event: ReactDragEvent<HTMLButtonElement>, targetId: number) {
-    const draggedId = draggedTabIdRef.current;
-    if (draggedId === null || draggedId === targetId) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const bounds = event.currentTarget.getBoundingClientRect();
-    const position = event.clientX < bounds.left + bounds.width / 2 ? 'before' : 'after';
-    tabDropHandled.current = true;
-    setTabs((current) => reorderItems(current, draggedId, targetId, position));
-    setTabDropTarget(null);
-  }
-
-  function handleTabDragEnd(event: ReactDragEvent<HTMLButtonElement>, tabId: number) {
-    const wasReordered = tabDropHandled.current;
-    tabDropHandled.current = false;
+  function resetTabPointerDrag() {
+    tabPointerDragRef.current = null;
     draggedTabIdRef.current = null;
+    tabDropTargetRef.current = null;
     setDraggedTabId(null);
     setTabDropTarget(null);
-    if (wasReordered || isDetached) return;
+  }
+
+  function handleTabPointerDown(event: ReactPointerEvent<HTMLButtonElement>, tabId: number) {
+    if (isDetached || event.button !== 0) return;
+    tabPointerDragRef.current = {
+      id: tabId,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      dragging: false,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handleTabPointerMove(event: ReactPointerEvent<HTMLButtonElement>) {
+    const drag = tabPointerDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (!drag.dragging) {
+      if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 6) return;
+      drag.dragging = true;
+      draggedTabIdRef.current = drag.id;
+      tabDropTargetRef.current = null;
+      setDraggedTabId(drag.id);
+      setTabDropTarget(null);
+    }
+    trackTabDropTarget(event.clientX, event.clientY);
+  }
+
+  function handleTabPointerUp(event: ReactPointerEvent<HTMLButtonElement>) {
+    const drag = tabPointerDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    if (!drag.dragging) {
+      tabPointerDragRef.current = null;
+      return;
+    }
+
+    event.preventDefault();
+    suppressTabClickRef.current = true;
+    window.setTimeout(() => { suppressTabClickRef.current = false; }, 0);
+    trackTabDropTarget(event.clientX, event.clientY);
+    const target = tabDropTargetRef.current;
 
     const insideByClient = event.clientX > 0
       && event.clientY > 0
@@ -657,7 +706,19 @@ export default function App() {
       && event.screenY <= window.screenY + window.outerHeight;
     const hasScreenPosition = event.screenX !== 0 || event.screenY !== 0;
     const endedInsideWindow = hasScreenPosition ? insideByScreen : insideByClient;
-    if (!endedInsideWindow) void detachTab(tabId);
+    resetTabPointerDrag();
+
+    if (!endedInsideWindow) {
+      void detachTab(drag.id);
+    } else if (target && target.id !== drag.id) {
+      setTabs((current) => reorderItems(current, drag.id, target.id, target.position));
+    }
+  }
+
+  function handleTabPointerCancel(event: ReactPointerEvent<HTMLButtonElement>) {
+    const drag = tabPointerDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    resetTabPointerDrag();
   }
 
   async function openPortableLibrary() {
@@ -709,49 +770,103 @@ export default function App() {
     setSectionEditor({ sectionId: null, name: '', confirmDelete: false, commandId });
   }
 
-  function handleSectionDragStart(event: ReactDragEvent<HTMLButtonElement>, sectionId: string) {
-    draggedSectionIdRef.current = sectionId;
-    setDraggedSectionId(sectionId);
-    setSectionDropTarget(null);
-    event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData('text/riftdrift-section', sectionId);
-    event.dataTransfer.setData('text/plain', sectionId);
+  function updateSectionDropTarget(target: DropTarget<string> | null) {
+    sectionDropTargetRef.current = target;
+    setSectionDropTarget((current) => (
+      current?.id === target?.id && current?.position === target?.position ? current : target
+    ));
   }
 
-  function handleSectionDragOver(event: ReactDragEvent<HTMLElement>, targetId: string) {
+  function trackSectionDropTarget(clientX: number, clientY: number) {
     const draggedId = draggedSectionIdRef.current;
-    if (!draggedId || draggedId === targetId) return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
-    if (targetId === lastSectionId) {
-      setSectionDropTarget({ id: targetId, position: 'before' });
+    if (!draggedId || (clientX === 0 && clientY === 0)) return;
+    const target = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>('[data-section-id]');
+    if (!target) {
+      updateSectionDropTarget(null);
       return;
     }
-    const bounds = event.currentTarget.getBoundingClientRect();
-    const position = event.clientY < bounds.top + bounds.height / 2 ? 'before' : 'after';
-    setSectionDropTarget({ id: targetId, position });
+    const targetId = target.dataset.sectionId;
+    if (!targetId || targetId === draggedId) {
+      updateSectionDropTarget(null);
+      return;
+    }
+    const bounds = target.getBoundingClientRect();
+    updateSectionDropTarget({
+      id: targetId,
+      position: targetId === lastSectionId || clientY < bounds.top + bounds.height / 2
+        ? 'before'
+        : 'after',
+    });
   }
 
-  function handleSectionDrop(event: ReactDragEvent<HTMLElement>, targetId: string) {
-    const draggedId = draggedSectionIdRef.current;
-    if (!draggedId || draggedId === targetId) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const bounds = event.currentTarget.getBoundingClientRect();
-    const position = targetId === lastSectionId || event.clientY < bounds.top + bounds.height / 2
-      ? 'before'
-      : 'after';
-    setLibrary((current) => ({
-      ...current,
-      sections: reorderItems(current.sections, draggedId, targetId, position),
-    }));
-    setSectionDropTarget(null);
-  }
-
-  function handleSectionDragEnd() {
+  function resetSectionPointerDrag() {
+    sectionPointerDragRef.current = null;
     draggedSectionIdRef.current = null;
+    sectionDropTargetRef.current = null;
     setDraggedSectionId(null);
     setSectionDropTarget(null);
+  }
+
+  function handleSectionPointerDown(event: ReactPointerEvent<HTMLButtonElement>, sectionId: string) {
+    if (event.button !== 0) return;
+    sectionPointerDragRef.current = {
+      id: sectionId,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      dragging: false,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handleSectionPointerMove(event: ReactPointerEvent<HTMLButtonElement>) {
+    const drag = sectionPointerDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (!drag.dragging) {
+      if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 6) return;
+      drag.dragging = true;
+      draggedSectionIdRef.current = drag.id;
+      sectionDropTargetRef.current = null;
+      setDraggedSectionId(drag.id);
+      setSectionDropTarget(null);
+    }
+    trackSectionDropTarget(event.clientX, event.clientY);
+  }
+
+  function handleSectionPointerUp(event: ReactPointerEvent<HTMLButtonElement>) {
+    const drag = sectionPointerDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    if (!drag.dragging) {
+      sectionPointerDragRef.current = null;
+      return;
+    }
+
+    event.preventDefault();
+    suppressSectionClickRef.current = true;
+    window.setTimeout(() => { suppressSectionClickRef.current = false; }, 0);
+    trackSectionDropTarget(event.clientX, event.clientY);
+    const target = sectionDropTargetRef.current;
+    const endedInsideWindow = event.clientX > 0
+      && event.clientY > 0
+      && event.clientX < window.innerWidth
+      && event.clientY < window.innerHeight;
+    resetSectionPointerDrag();
+
+    if (endedInsideWindow && target && target.id !== drag.id) {
+      setLibrary((current) => ({
+        ...current,
+        sections: reorderItems(current.sections, drag.id, target.id, target.position),
+      }));
+    }
+  }
+
+  function handleSectionPointerCancel(event: ReactPointerEvent<HTMLButtonElement>) {
+    const drag = sectionPointerDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    resetSectionPointerDrag();
   }
 
   function submitSection(event: FormEvent<HTMLFormElement>) {
@@ -890,14 +1005,20 @@ export default function App() {
             {tabs.map((tab) => (
               <button
                 key={tab.id}
+                data-tab-id={tab.id}
                 className={`tab ${activeTab === tab.id ? 'active' : ''} ${draggedTabId === tab.id ? 'dragging' : ''} ${tabDropTarget?.id === tab.id ? `drop-${tabDropTarget.position}` : ''}`}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => {
+                  if (suppressTabClickRef.current) {
+                    suppressTabClickRef.current = false;
+                    return;
+                  }
+                  setActiveTab(tab.id);
+                }}
                 onDoubleClick={() => void detachTab(tab.id)}
-                draggable={!isDetached}
-                onDragStart={(event) => handleTabDragStart(event, tab.id)}
-                onDragOver={(event) => handleTabDragOver(event, tab.id)}
-                onDrop={(event) => handleTabDrop(event, tab.id)}
-                onDragEnd={(event) => handleTabDragEnd(event, tab.id)}
+                onPointerDown={(event) => handleTabPointerDown(event, tab.id)}
+                onPointerMove={handleTabPointerMove}
+                onPointerUp={handleTabPointerUp}
+                onPointerCancel={handleTabPointerCancel}
                 role="tab"
                 aria-selected={activeTab === tab.id}
                 aria-grabbed={draggedTabId === tab.id}
@@ -968,23 +1089,30 @@ export default function App() {
             <div className="sections">
               {sections.map((section) => (
                 <section
+                  data-section-id={section.id}
                   className={`library-section ${section.id === lastSectionId ? 'section-last' : 'section-user'} ${openSections[section.id] ? 'open' : ''} ${draggedSectionId === section.id ? 'dragging' : ''} ${sectionDropTarget?.id === section.id ? `drop-${sectionDropTarget.position}` : ''}`}
                   key={section.id}
-                  onDragOver={(event) => handleSectionDragOver(event, section.id)}
-                  onDrop={(event) => handleSectionDrop(event, section.id)}
                 >
                   <div className="section-header">
                     <button
                       className="section-toggle"
-                      draggable={section.editable}
-                      onDragStart={section.editable
-                        ? (event) => handleSectionDragStart(event, section.id)
+                      data-reorderable={section.editable || undefined}
+                      onPointerDown={section.editable
+                        ? (event) => handleSectionPointerDown(event, section.id)
                         : undefined}
-                      onDragEnd={section.editable ? handleSectionDragEnd : undefined}
-                      onClick={() => setOpenSections((current) => ({
-                        ...current,
-                        [section.id]: !current[section.id],
-                      }))}
+                      onPointerMove={section.editable ? handleSectionPointerMove : undefined}
+                      onPointerUp={section.editable ? handleSectionPointerUp : undefined}
+                      onPointerCancel={section.editable ? handleSectionPointerCancel : undefined}
+                      onClick={() => {
+                        if (suppressSectionClickRef.current) {
+                          suppressSectionClickRef.current = false;
+                          return;
+                        }
+                        setOpenSections((current) => ({
+                          ...current,
+                          [section.id]: !current[section.id],
+                        }));
+                      }}
                       aria-expanded={Boolean(openSections[section.id])}
                       aria-grabbed={section.editable ? draggedSectionId === section.id : undefined}
                       title={section.editable ? 'Drag to reorder section' : undefined}
