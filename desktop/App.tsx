@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import type { FormEvent, MouseEvent as ReactMouseEvent } from 'react';
+import type { DragEvent as ReactDragEvent, FormEvent, MouseEvent as ReactMouseEvent } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { FitAddon } from '@xterm/addon-fit';
@@ -36,6 +36,8 @@ type LibraryFileResult = { path: string; contents: string | null };
 type SectionEditor = { sectionId: string | null; name: string; confirmDelete: boolean; commandId?: string };
 type CommandEditor = { commandId: string; name: string };
 type Toast = { message: string; tone: 'success' | 'error' | 'warning' };
+type DropPosition = 'before' | 'after';
+type DropTarget<Id> = { id: Id; position: DropPosition };
 
 const legacyStorageKey = 'riftdrift.commands.v1';
 const activeLibraryPathKey = 'riftdrift.active-library-path.v1';
@@ -51,6 +53,26 @@ function PencilIcon() {
 
 function TrashIcon() {
   return <svg aria-hidden="true" viewBox="0 0 16 16"><path d="M3.5 5h9M6 5V3.5h4V5m1.5 0-.6 8h-6l-.6-8M6.8 7v4M9.2 7v4" /></svg>;
+}
+
+function reorderItems<T extends { id: Id }, Id extends string | number>(
+  items: T[],
+  draggedId: Id,
+  targetId: Id,
+  position: DropPosition,
+) {
+  if (draggedId === targetId) return items;
+  const draggedIndex = items.findIndex((item) => item.id === draggedId);
+  if (draggedIndex < 0) return items;
+  const moving = items[draggedIndex];
+  const remaining = items.filter((item) => item.id !== draggedId);
+  const targetIndex = remaining.findIndex((item) => item.id === targetId);
+  const insertionIndex = targetIndex < 0
+    ? remaining.length
+    : targetIndex + (position === 'after' ? 1 : 0);
+  const reordered = [...remaining];
+  reordered.splice(insertionIndex, 0, moving);
+  return reordered;
 }
 
 const TerminalPane = forwardRef<TerminalPaneHandle, {
@@ -367,6 +389,9 @@ export default function App() {
   const isDetached = Boolean(detachedSession);
   const terminalRef = useRef<TerminalPaneHandle>(null);
   const toastTimer = useRef<number | undefined>(undefined);
+  const tabDropHandled = useRef(false);
+  const draggedTabIdRef = useRef<number | null>(null);
+  const draggedSectionIdRef = useRef<string | null>(null);
   const [library, setLibrary] = useState<LibraryDocument>(emptyLibraryDocument);
   const [libraryPath, setLibraryPath] = useState(isTauriRuntime ? '' : 'RiftDrift Library.riftdrift');
   const [libraryReady, setLibraryReady] = useState(!isTauriRuntime);
@@ -376,9 +401,13 @@ export default function App() {
   const [saveMenuCommandId, setSaveMenuCommandId] = useState<string | null>(null);
   const [sectionEditor, setSectionEditor] = useState<SectionEditor | null>(null);
   const [commandEditor, setCommandEditor] = useState<CommandEditor | null>(null);
+  const [draggedSectionId, setDraggedSectionId] = useState<string | null>(null);
+  const [sectionDropTarget, setSectionDropTarget] = useState<DropTarget<string> | null>(null);
   const [tabs, setTabs] = useState<Tab[]>(
     detachedSession ? [{ id: detachedSession, sessionId: detachedSession, name: detachedName, path: '~' }] : [],
   );
+  const [draggedTabId, setDraggedTabId] = useState<number | null>(null);
+  const [tabDropTarget, setTabDropTarget] = useState<DropTarget<number> | null>(null);
   const [activeTab, setActiveTab] = useState(detachedSession ?? 0);
   const [toast, setToast] = useState<Toast | null>(null);
 
@@ -577,6 +606,60 @@ export default function App() {
     }
   }
 
+  function handleTabDragStart(event: ReactDragEvent<HTMLButtonElement>, tabId: number) {
+    if (isDetached) return;
+    tabDropHandled.current = false;
+    draggedTabIdRef.current = tabId;
+    setDraggedTabId(tabId);
+    setTabDropTarget(null);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/riftdrift-tab', String(tabId));
+    event.dataTransfer.setData('text/plain', String(tabId));
+  }
+
+  function handleTabDragOver(event: ReactDragEvent<HTMLButtonElement>, targetId: number) {
+    const draggedId = draggedTabIdRef.current;
+    if (draggedId === null || draggedId === targetId) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const position = event.clientX < bounds.left + bounds.width / 2 ? 'before' : 'after';
+    setTabDropTarget({ id: targetId, position });
+  }
+
+  function handleTabDrop(event: ReactDragEvent<HTMLButtonElement>, targetId: number) {
+    const draggedId = draggedTabIdRef.current;
+    if (draggedId === null || draggedId === targetId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const position = event.clientX < bounds.left + bounds.width / 2 ? 'before' : 'after';
+    tabDropHandled.current = true;
+    setTabs((current) => reorderItems(current, draggedId, targetId, position));
+    setTabDropTarget(null);
+  }
+
+  function handleTabDragEnd(event: ReactDragEvent<HTMLButtonElement>, tabId: number) {
+    const wasReordered = tabDropHandled.current;
+    tabDropHandled.current = false;
+    draggedTabIdRef.current = null;
+    setDraggedTabId(null);
+    setTabDropTarget(null);
+    if (wasReordered || isDetached) return;
+
+    const insideByClient = event.clientX > 0
+      && event.clientY > 0
+      && event.clientX < window.innerWidth
+      && event.clientY < window.innerHeight;
+    const insideByScreen = event.screenX >= window.screenX
+      && event.screenY >= window.screenY
+      && event.screenX <= window.screenX + window.outerWidth
+      && event.screenY <= window.screenY + window.outerHeight;
+    const hasScreenPosition = event.screenX !== 0 || event.screenY !== 0;
+    const endedInsideWindow = hasScreenPosition ? insideByScreen : insideByClient;
+    if (!endedInsideWindow) void detachTab(tabId);
+  }
+
   async function openPortableLibrary() {
     if (!isTauriRuntime) {
       flash('File controls are available in the native app', 'warning');
@@ -624,6 +707,51 @@ export default function App() {
   function openNewSection(commandId?: string) {
     setSaveMenuCommandId(null);
     setSectionEditor({ sectionId: null, name: '', confirmDelete: false, commandId });
+  }
+
+  function handleSectionDragStart(event: ReactDragEvent<HTMLButtonElement>, sectionId: string) {
+    draggedSectionIdRef.current = sectionId;
+    setDraggedSectionId(sectionId);
+    setSectionDropTarget(null);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/riftdrift-section', sectionId);
+    event.dataTransfer.setData('text/plain', sectionId);
+  }
+
+  function handleSectionDragOver(event: ReactDragEvent<HTMLElement>, targetId: string) {
+    const draggedId = draggedSectionIdRef.current;
+    if (!draggedId || draggedId === targetId) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    if (targetId === lastSectionId) {
+      setSectionDropTarget({ id: targetId, position: 'before' });
+      return;
+    }
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const position = event.clientY < bounds.top + bounds.height / 2 ? 'before' : 'after';
+    setSectionDropTarget({ id: targetId, position });
+  }
+
+  function handleSectionDrop(event: ReactDragEvent<HTMLElement>, targetId: string) {
+    const draggedId = draggedSectionIdRef.current;
+    if (!draggedId || draggedId === targetId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const position = targetId === lastSectionId || event.clientY < bounds.top + bounds.height / 2
+      ? 'before'
+      : 'after';
+    setLibrary((current) => ({
+      ...current,
+      sections: reorderItems(current.sections, draggedId, targetId, position),
+    }));
+    setSectionDropTarget(null);
+  }
+
+  function handleSectionDragEnd() {
+    draggedSectionIdRef.current = null;
+    setDraggedSectionId(null);
+    setSectionDropTarget(null);
   }
 
   function submitSection(event: FormEvent<HTMLFormElement>) {
@@ -762,14 +890,18 @@ export default function App() {
             {tabs.map((tab) => (
               <button
                 key={tab.id}
-                className={`tab ${activeTab === tab.id ? 'active' : ''}`}
+                className={`tab ${activeTab === tab.id ? 'active' : ''} ${draggedTabId === tab.id ? 'dragging' : ''} ${tabDropTarget?.id === tab.id ? `drop-${tabDropTarget.position}` : ''}`}
                 onClick={() => setActiveTab(tab.id)}
                 onDoubleClick={() => void detachTab(tab.id)}
                 draggable={!isDetached}
-                onDragEnd={() => void detachTab(tab.id)}
+                onDragStart={(event) => handleTabDragStart(event, tab.id)}
+                onDragOver={(event) => handleTabDragOver(event, tab.id)}
+                onDrop={(event) => handleTabDrop(event, tab.id)}
+                onDragEnd={(event) => handleTabDragEnd(event, tab.id)}
                 role="tab"
                 aria-selected={activeTab === tab.id}
-                title={isDetached ? tab.name : 'Drag out or double-click to detach'}
+                aria-grabbed={draggedTabId === tab.id}
+                title={isDetached ? tab.name : 'Drag to reorder; drag outside the window or double-click to detach'}
               >
                 <span className="tab-terminal">›_</span>
                 <span>{tab.name}</span>
@@ -786,7 +918,7 @@ export default function App() {
             ))}
           </div>
           {!isDetached && <button className="new-tab" onClick={() => void createTab()} aria-label="New terminal tab">+</button>}
-          <span className="drag-hint">{isDetached ? 'DETACHED SESSION' : 'DRAG TAB TO DETACH'}</span>
+          <span className="drag-hint">{isDetached ? 'DETACHED SESSION' : 'DRAG TO REORDER · OUT TO DETACH'}</span>
         </div>
 
         <div className={`workspace ${sidebarOpen ? 'sidebar-visible' : ''}`}>
@@ -836,17 +968,26 @@ export default function App() {
             <div className="sections">
               {sections.map((section) => (
                 <section
-                  className={`library-section ${section.id === lastSectionId ? 'section-last' : 'section-user'} ${openSections[section.id] ? 'open' : ''}`}
+                  className={`library-section ${section.id === lastSectionId ? 'section-last' : 'section-user'} ${openSections[section.id] ? 'open' : ''} ${draggedSectionId === section.id ? 'dragging' : ''} ${sectionDropTarget?.id === section.id ? `drop-${sectionDropTarget.position}` : ''}`}
                   key={section.id}
+                  onDragOver={(event) => handleSectionDragOver(event, section.id)}
+                  onDrop={(event) => handleSectionDrop(event, section.id)}
                 >
                   <div className="section-header">
                     <button
                       className="section-toggle"
+                      draggable={section.editable}
+                      onDragStart={section.editable
+                        ? (event) => handleSectionDragStart(event, section.id)
+                        : undefined}
+                      onDragEnd={section.editable ? handleSectionDragEnd : undefined}
                       onClick={() => setOpenSections((current) => ({
                         ...current,
                         [section.id]: !current[section.id],
                       }))}
                       aria-expanded={Boolean(openSections[section.id])}
+                      aria-grabbed={section.editable ? draggedSectionId === section.id : undefined}
+                      title={section.editable ? 'Drag to reorder section' : undefined}
                     >
                       <span className={`chevron ${openSections[section.id] ? 'open' : ''}`}>›</span>
                       <span className="section-labels">
