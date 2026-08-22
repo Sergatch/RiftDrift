@@ -284,6 +284,13 @@ function TerminalPane({ sessionId, history, onCommand }, ref) {
 
         const character = data[index];
 
+        if (character === '\t') {
+          preferRenderedCommand.current = true;
+          renderedCommand.current = '';
+          index += 1;
+          continue;
+        }
+
         if (character === '\u0010' || character === '\u000e') {
           preferRenderedCommand.current = true;
           renderedCommand.current = '';
@@ -335,7 +342,7 @@ function TerminalPane({ sessionId, history, onCommand }, ref) {
           continue;
         }
 
-        if (character === '\t' || character >= ' ') {
+        if (character >= ' ') {
           commandBuffer.current += character;
         }
         index += 1;
@@ -351,10 +358,13 @@ function TerminalPane({ sessionId, history, onCommand }, ref) {
       if (
         event.key === 'ArrowUp'
         || event.key === 'ArrowDown'
+        || event.key === 'Tab'
         || event.code === 'ArrowUp'
         || event.code === 'ArrowDown'
+        || event.code === 'Tab'
         || event.keyCode === 38
         || event.keyCode === 40
+        || event.keyCode === 9
       ) {
         preferRenderedCommand.current = true;
         renderedCommand.current = '';
