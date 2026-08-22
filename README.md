@@ -9,7 +9,6 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Sergatch/RiftDrift/actions/workflows/build-windows.yml"><img src="https://github.com/Sergatch/RiftDrift/actions/workflows/build-windows.yml/badge.svg" alt="Build Windows"></a>
   <img src="https://img.shields.io/badge/version-0.1.0-7c3aed" alt="Version 0.1.0">
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-17121d" alt="macOS and Windows">
 </p>
