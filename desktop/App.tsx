@@ -728,22 +728,16 @@ export default function App() {
     trackTabDropTarget(event.clientX, event.clientY);
     const target = tabDropTargetRef.current;
 
-    const insideByClient = event.clientX > 0
-      && event.clientY > 0
-      && event.clientX < window.innerWidth
-      && event.clientY < window.innerHeight;
-    const insideByScreen = event.screenX >= window.screenX
-      && event.screenY >= window.screenY
-      && event.screenX <= window.screenX + window.outerWidth
-      && event.screenY <= window.screenY + window.outerHeight;
-    const hasScreenPosition = event.screenX !== 0 || event.screenY !== 0;
-    const endedInsideWindow = hasScreenPosition ? insideByScreen : insideByClient;
+    const endedInsideWindow = event.clientX >= 0
+      && event.clientY >= 0
+      && event.clientX <= window.innerWidth
+      && event.clientY <= window.innerHeight;
     resetTabPointerDrag();
 
-    if (!endedInsideWindow) {
-      void detachTab(drag.id);
-    } else if (target && target.id !== drag.id) {
+    if (target && target.id !== drag.id) {
       setTabs((current) => reorderItems(current, drag.id, target.id, target.position));
+    } else if (!endedInsideWindow) {
+      void detachTab(drag.id);
     }
   }
 
