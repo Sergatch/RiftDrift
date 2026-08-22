@@ -1,0 +1,21 @@
+:root {
+  --font-geist-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+  --font-geist-mono: "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
+}
+
+html, body, #root { width: 100%; height: 100%; overflow: hidden; }
+
+.desktop-native { padding: 0; background: #050406; }
+.desktop-native .app-shell { width: 100%; height: 100vh; min-height: 520px; border: 0; border-radius: 0; box-shadow: none; }
+.desktop-native .window-drag-area { -webkit-user-select: none; user-select: none; }
+.desktop-native .native-traffic-space { min-width: 62px; min-height: 100%; }
+.desktop-native .terminal-native { padding: 0; position: relative; }
+.xterm-host { position: absolute; inset: 0; padding: 24px 23px 16px; }
+.xterm-host .xterm { height: 100%; }
+.xterm-host .xterm-viewport { scrollbar-color: #33203d transparent; }
+.xterm-host .xterm-screen { outline: none; }
+.terminal-loading { padding: 30px; color: #625a66; font-size: 11px; }
+
+@media (max-width: 680px) {
+  .xterm-host { padding: 17px 14px 10px; }
+}

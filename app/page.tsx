@@ -1,11 +1,10 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 type Command = {
   id: number;
   text: string;
-  time: string;
   starred: boolean;
   saved: boolean;
 };
@@ -20,35 +19,30 @@ const initialCommands: Command[] = [
   {
     id: 1,
     text: 'git status --short && git log --oneline --decorate -8',
-    time: 'now',
     starred: true,
     saved: true,
   },
   {
     id: 2,
     text: 'npm run build',
-    time: '2m',
     starred: true,
     saved: true,
   },
   {
     id: 3,
     text: 'docker compose up --build --remove-orphans',
-    time: '8m',
     starred: false,
     saved: true,
   },
   {
     id: 4,
     text: 'find . -type f -name "*.tsx" -not -path "*/node_modules/*" | xargs wc -l | sort -nr | head -20',
-    time: '14m',
     starred: false,
     saved: false,
   },
   {
     id: 5,
     text: 'git pull --rebase origin main',
-    time: '31m',
     starred: false,
     saved: true,
   },
@@ -62,12 +56,11 @@ const terminalHistory = [
 
 export default function Home() {
   const [commands, setCommands] = useState(initialCommands);
-  const [input, setInput] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-    Starred: true,
-    Library: true,
-    Last: true,
+    Starred: false,
+    Favorite: false,
+    Last: false,
   });
   const [tabs, setTabs] = useState<Tab[]>([
     { id: 1, name: 'riftdrift', path: '~/Projects/riftdrift' },
@@ -80,7 +73,7 @@ export default function Home() {
   const sections = useMemo(
     () => [
       { name: 'Starred', hint: 'Priority', items: commands.filter((item) => item.starred) },
-      { name: 'Library', hint: 'Saved', items: commands.filter((item) => item.saved) },
+      { name: 'Favorite', hint: 'Saved', items: commands.filter((item) => item.saved) },
       { name: 'Last', hint: 'History', items: commands },
     ],
     [commands],
@@ -112,28 +105,30 @@ export default function Home() {
   }
 
   function chooseCommand(command: string) {
-    setInput(command);
-    setToast('Command added to prompt');
-    window.setTimeout(() => setToast(''), 1800);
-  }
-
-  function runCommand(event: FormEvent) {
-    event.preventDefault();
-    const value = input.trim();
-    if (!value) return;
-
-    const output = value.includes('git status')
+    const output = command.includes('git status')
       ? ['On branch feature/command-library', 'nothing to commit, working tree clean']
-      : value.includes('npm')
+      : command.includes('npm')
         ? ['✓ command completed successfully in 1.2s']
-        : [`zsh: completed “${value.slice(0, 42)}${value.length > 42 ? '…' : ''}”`];
+        : [`zsh: completed “${command.slice(0, 42)}${command.length > 42 ? '…' : ''}”`];
 
-    setRanCommands((items) => [...items, { prompt: value, output }]);
-    setCommands((items) => [
-      { id: Date.now(), text: value, time: 'now', starred: false, saved: false },
-      ...items.map((item) => (item.time === 'now' ? { ...item, time: '1m' } : item)),
-    ]);
-    setInput('');
+    setRanCommands((items) => [...items, { prompt: command, output }]);
+    setCommands((items) => {
+      const selected = items.find((item) => item.text === command);
+
+      return [
+        {
+          ...(selected ?? {
+            id: Date.now(),
+            text: command,
+            starred: false,
+            saved: false,
+          }),
+        },
+        ...items.filter((item) => item.text !== command),
+      ];
+    });
+    setToast('Command sent to terminal');
+    window.setTimeout(() => setToast(''), 1800);
   }
 
   function addTab() {
@@ -262,45 +257,28 @@ export default function Home() {
               </div>
             </div>
 
-            <form className="commandline" onSubmit={runCommand}>
-              <span className="command-symbol">❯</span>
-              <input
-                value={input}
-                onChange={(event) => setInput(event.target.value)}
-                placeholder="Type a command…"
-                autoComplete="off"
-                spellCheck={false}
-                aria-label="Terminal command"
-              />
-              <div className="command-actions">
-                <span className="autocomplete">⌥↵ <i>complete</i></span>
-                <button type="submit">RUN <kbd>↵</kbd></button>
-              </div>
-            </form>
           </section>
 
           <aside className="command-panel" aria-label="Command libraries">
-            <div className="panel-header">
-              <div>
-                <span className="eyebrow">COMMANDS</span>
-                <h1>Your drift.</h1>
-              </div>
-              <button className="panel-close" onClick={() => setSidebarOpen(false)} aria-label="Close command library">×</button>
-            </div>
-            <div className="panel-rule" />
             <div className="sections">
               {sections.map((section) => (
-                <section className="library-section" key={section.name}>
+                <section
+                  className={`library-section section-${section.name.toLowerCase()} ${openSections[section.name] ? 'open' : ''}`}
+                  key={section.name}
+                >
                   <button
                     className="section-toggle"
-                    onClick={() =>
-                      setOpenSections((current) => ({ ...current, [section.name]: !current[section.name] }))
-                    }
+                    onClick={() => setOpenSections((current) => ({
+                      ...current,
+                      [section.name]: !current[section.name],
+                    }))}
                     aria-expanded={openSections[section.name]}
                   >
                     <span className={`chevron ${openSections[section.name] ? 'open' : ''}`}>›</span>
-                    <span className="section-title">{section.name}</span>
-                    <span className="section-hint">{section.hint}</span>
+                    <span className="section-labels">
+                      <span className="section-title">{section.name}</span>
+                      <span className="section-hint">{section.hint}</span>
+                    </span>
                     <span className="section-count">{String(section.items.length).padStart(2, '0')}</span>
                   </button>
                   {openSections[section.name] && (
@@ -319,15 +297,14 @@ export default function Home() {
                             <button
                               className={command.saved ? 'marked' : ''}
                               onClick={() => toggleCommand(command.id, 'saved')}
-                              aria-label={command.saved ? 'Remove from Library' : 'Add to Library'}
-                              title={command.saved ? 'Remove from Library' : 'Add to Library'}
+                              aria-label={command.saved ? 'Remove from Favorite' : 'Add to Favorite'}
+                              title={command.saved ? 'Remove from Favorite' : 'Add to Favorite'}
                             >
-                              {command.saved ? '▣' : '▢'}
+                              {command.saved ? '♥' : '♡'}
                             </button>
                           </div>
                           <button className="command-text" onClick={() => chooseCommand(command.text)} title={command.text}>
                             <code>{command.text}</code>
-                            <span>{command.time}</span>
                           </button>
                         </article>
                       )) : <p className="empty-state">No commands here yet.</p>}
@@ -336,10 +313,6 @@ export default function Home() {
                 </section>
               ))}
             </div>
-            <footer className="panel-footer">
-              <span><i /> SYNCED LOCALLY</span>
-              <span>⌘K · SEARCH</span>
-            </footer>
           </aside>
         </div>
 
