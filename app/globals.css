@@ -107,13 +107,14 @@ button { color: inherit; }
 .tabs { display: flex; align-items: stretch; min-width: 0; overflow: auto; scrollbar-width: none; }
 .tab { min-width: 168px; max-width: 220px; position: relative; padding: 0 13px; display: flex; align-items: center; gap: 9px; border: 0; border-left: 1px solid transparent; border-right: 1px solid transparent; background: transparent; color: #625c67; cursor: grab; touch-action: none; user-select: none; font-size: 11px; white-space: nowrap; transition: opacity .14s ease, background .14s ease; }
 .tab.active { color: #e9e2ee; border-color: var(--line); background: #0c090e; box-shadow: inset 0 2px 0 var(--violet); }
+.tab:focus-visible { outline: 1px solid var(--violet-bright); outline-offset: -2px; }
 .tab:active { cursor: grabbing; }
 .tab.dragging { opacity: .35; }
 .tab.drop-before::before, .tab.drop-after::after { content: ''; position: absolute; z-index: 4; top: 6px; bottom: 6px; width: 2px; border-radius: 2px; background: var(--violet-bright); box-shadow: 0 0 10px rgba(216,145,255,.75); }
 .tab.drop-before::before { left: -1px; }
 .tab.drop-after::after { right: -1px; }
 .tab-terminal { color: var(--violet-bright); font-size: 10px; letter-spacing: -.1em; }
-.tab-close { opacity: 0; margin-left: auto; padding: 2px 5px; color: #77707d; border-radius: 3px; font-size: 15px; line-height: 1; }
+.tab-close { opacity: 0; margin-left: auto; padding: 2px 5px; border: 0; border-radius: 3px; background: transparent; color: #77707d; cursor: pointer; font-size: 15px; line-height: 1; }
 .tab:hover .tab-close, .tab.active .tab-close { opacity: 1; }
 .tab-close:hover { color: white; background: rgba(255,255,255,.08); }
 .new-tab { width: 42px; border: 0; border-right: 1px solid var(--line); background: transparent; color: #6f6874; font-size: 19px; cursor: pointer; }
@@ -187,6 +188,13 @@ button { color: inherit; }
 .command-list { min-height: 0; padding: 4px 5px 9px; display: grid; align-content: start; gap: 1px; }
 .command-card { min-width: 0; min-height: 42px; position: relative; display: grid; grid-template-columns: 28px minmax(0,1fr) auto; align-items: center; gap: 2px; padding: 2px 3px; border: 1px solid transparent; border-radius: 5px; transition: .16s ease; }
 .command-card:hover { border-color: rgba(177,76,255,.15); background: rgba(177,76,255,.045); }
+.command-card.reorderable { touch-action: none; }
+.command-card.reorderable .command-text { cursor: grab; user-select: none; }
+.command-card.reorderable .command-text:active { cursor: grabbing; }
+.command-card.dragging { opacity: .35; }
+.command-card.drop-before::after, .command-card.drop-after::after { content: ''; position: absolute; z-index: 6; right: 5px; left: 5px; height: 2px; border-radius: 2px; background: var(--violet-bright); box-shadow: 0 0 8px rgba(216,145,255,.7); }
+.command-card.drop-before::after { top: -2px; }
+.command-card.drop-after::after { bottom: -2px; }
 .command-card:has(.command-toggles) { grid-template-columns: 42px minmax(0,1fr); }
 .command-toggles { display: flex; align-items: center; gap: 1px; }
 .command-toggles button { width: 20px; height: 25px; padding: 0; border: 0; background: transparent; color: #433c47; font-size: 12px; cursor: pointer; }

@@ -10,6 +10,7 @@ export type LibraryCommand = {
   text: string;
   sectionId: string | null;
   displayName: string | null;
+  savedOrder: number | null;
 };
 
 export type LibraryDocument = {
@@ -40,6 +41,26 @@ export const emptyLibraryDocument = (): LibraryDocument => ({
 export function createLibraryId(prefix: 'section' | 'command') {
   const uuid = globalThis.crypto?.randomUUID?.();
   return uuid ? `${prefix}-${uuid}` : `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+export function sortSavedCommands(commands: LibraryCommand[]) {
+  return [...commands].sort((left, right) => {
+    const leftOrder = left.savedOrder ?? Number.MAX_SAFE_INTEGER;
+    const rightOrder = right.savedOrder ?? Number.MAX_SAFE_INTEGER;
+    return leftOrder - rightOrder;
+  });
+}
+
+export function normalizeSavedCommandOrder(history: LibraryCommand[], sections: LibrarySection[]) {
+  const normalizedOrder = new Map<string, number>();
+  for (const section of sections) {
+    sortSavedCommands(history.filter((command) => command.sectionId === section.id))
+      .forEach((command, index) => normalizedOrder.set(command.id, index));
+  }
+  return history.map((command) => ({
+    ...command,
+    savedOrder: command.sectionId ? normalizedOrder.get(command.id) ?? null : null,
+  }));
 }
 
 export function parseLibraryDocument(contents: string): LibraryDocument {
@@ -80,10 +101,13 @@ export function parseLibraryDocument(contents: string): LibraryDocument {
       displayName: typeof item.displayName === 'string' && item.displayName.trim()
         ? item.displayName.trim()
         : null,
+      savedOrder: typeof item.savedOrder === 'number' && Number.isFinite(item.savedOrder) && item.savedOrder >= 0
+        ? item.savedOrder
+        : null,
     }];
   });
 
-  return { version: 2, sections, history: limitCommandHistory(history) };
+  return { version: 2, sections, history: limitCommandHistory(normalizeSavedCommandOrder(history, sections)) };
 }
 
 export function migrateLegacyCommands(value: unknown): LibraryDocument {
@@ -108,10 +132,11 @@ export function migrateLegacyCommands(value: unknown): LibraryDocument {
       text,
       sectionId: item.starred ? starredId : item.saved ? favoriteId : null,
       displayName: null,
+      savedOrder: null,
     }];
   });
 
-  return { version: 2, sections, history: limitCommandHistory(history) };
+  return { version: 2, sections, history: limitCommandHistory(normalizeSavedCommandOrder(history, sections)) };
 }
 
 export function serializeLibraryDocument(document: LibraryDocument) {

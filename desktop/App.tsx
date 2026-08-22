@@ -11,8 +11,10 @@ import {
   limitCommandHistory,
   MAX_HISTORY_COMMANDS,
   migrateLegacyCommands,
+  normalizeSavedCommandOrder,
   parseLibraryDocument,
   serializeLibraryDocument,
+  sortSavedCommands,
   type LibraryDocument,
 } from './library';
 
@@ -45,6 +47,7 @@ type PointerDrag<Id> = {
   startY: number;
   dragging: boolean;
 };
+type CommandPointerDrag = PointerDrag<string> & { sectionId: string };
 
 const legacyStorageKey = 'riftdrift.commands.v1';
 const activeLibraryPathKey = 'riftdrift.active-library-path.v1';
@@ -402,8 +405,12 @@ export default function App() {
   const sectionDropTargetRef = useRef<DropTarget<string> | null>(null);
   const tabPointerDragRef = useRef<PointerDrag<number> | null>(null);
   const sectionPointerDragRef = useRef<PointerDrag<string> | null>(null);
+  const commandPointerDragRef = useRef<CommandPointerDrag | null>(null);
   const suppressTabClickRef = useRef(false);
   const suppressSectionClickRef = useRef(false);
+  const suppressCommandClickRef = useRef(false);
+  const draggedCommandIdRef = useRef<string | null>(null);
+  const commandDropTargetRef = useRef<DropTarget<string> | null>(null);
   const [library, setLibrary] = useState<LibraryDocument>(emptyLibraryDocument);
   const [libraryPath, setLibraryPath] = useState(isTauriRuntime ? '' : 'RiftDrift Library.riftdrift');
   const [libraryReady, setLibraryReady] = useState(!isTauriRuntime);
@@ -415,6 +422,8 @@ export default function App() {
   const [commandEditor, setCommandEditor] = useState<CommandEditor | null>(null);
   const [draggedSectionId, setDraggedSectionId] = useState<string | null>(null);
   const [sectionDropTarget, setSectionDropTarget] = useState<DropTarget<string> | null>(null);
+  const [draggedCommandId, setDraggedCommandId] = useState<string | null>(null);
+  const [commandDropTarget, setCommandDropTarget] = useState<DropTarget<string> | null>(null);
   const [tabs, setTabs] = useState<Tab[]>(
     detachedSession ? [{ id: detachedSession, sessionId: detachedSession, name: detachedName, path: '~' }] : [],
   );
@@ -431,7 +440,7 @@ export default function App() {
         ...section,
         hint: 'Saved',
         editable: true,
-        items: library.history.filter((item) => item.sectionId === section.id),
+        items: sortSavedCommands(library.history.filter((item) => item.sectionId === section.id)),
       })),
       {
         id: lastSectionId,
@@ -567,6 +576,7 @@ export default function App() {
         text,
         sectionId: existing?.sectionId ?? null,
         displayName: existing?.displayName ?? null,
+        savedOrder: existing?.savedOrder ?? null,
       };
       return {
         ...current,
@@ -653,8 +663,9 @@ export default function App() {
     setTabDropTarget(null);
   }
 
-  function handleTabPointerDown(event: ReactPointerEvent<HTMLButtonElement>, tabId: number) {
+  function handleTabPointerDown(event: ReactPointerEvent<HTMLElement>, tabId: number) {
     if (isDetached || event.button !== 0) return;
+    if ((event.target as HTMLElement).closest('.tab-close')) return;
     tabPointerDragRef.current = {
       id: tabId,
       pointerId: event.pointerId,
@@ -665,7 +676,7 @@ export default function App() {
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
-  function handleTabPointerMove(event: ReactPointerEvent<HTMLButtonElement>) {
+  function handleTabPointerMove(event: ReactPointerEvent<HTMLElement>) {
     const drag = tabPointerDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     if (!drag.dragging) {
@@ -679,7 +690,7 @@ export default function App() {
     trackTabDropTarget(event.clientX, event.clientY);
   }
 
-  function handleTabPointerUp(event: ReactPointerEvent<HTMLButtonElement>) {
+  function handleTabPointerUp(event: ReactPointerEvent<HTMLElement>) {
     const drag = tabPointerDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
@@ -715,7 +726,7 @@ export default function App() {
     }
   }
 
-  function handleTabPointerCancel(event: ReactPointerEvent<HTMLButtonElement>) {
+  function handleTabPointerCancel(event: ReactPointerEvent<HTMLElement>) {
     const drag = tabPointerDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     resetTabPointerDrag();
@@ -869,6 +880,113 @@ export default function App() {
     resetSectionPointerDrag();
   }
 
+  function updateCommandDropTarget(target: DropTarget<string> | null) {
+    commandDropTargetRef.current = target;
+    setCommandDropTarget((current) => (
+      current?.id === target?.id && current?.position === target?.position ? current : target
+    ));
+  }
+
+  function trackCommandDropTarget(clientX: number, clientY: number, sectionId: string) {
+    const draggedId = draggedCommandIdRef.current;
+    if (!draggedId || (clientX === 0 && clientY === 0)) return;
+    const target = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>('[data-saved-command-id]');
+    const targetId = target?.dataset.savedCommandId;
+    if (!target || !targetId || target.dataset.commandSectionId !== sectionId || targetId === draggedId) {
+      updateCommandDropTarget(null);
+      return;
+    }
+    const bounds = target.getBoundingClientRect();
+    updateCommandDropTarget({
+      id: targetId,
+      position: clientY < bounds.top + bounds.height / 2 ? 'before' : 'after',
+    });
+  }
+
+  function resetCommandPointerDrag() {
+    commandPointerDragRef.current = null;
+    draggedCommandIdRef.current = null;
+    commandDropTargetRef.current = null;
+    setDraggedCommandId(null);
+    setCommandDropTarget(null);
+  }
+
+  function handleCommandPointerDown(
+    event: ReactPointerEvent<HTMLElement>,
+    commandId: string,
+    sectionId: string,
+  ) {
+    if (event.button !== 0) return;
+    const target = event.target as HTMLElement;
+    if (target.closest('.command-save, .command-rename, .command-delete, .section-menu')) return;
+    commandPointerDragRef.current = {
+      id: commandId,
+      sectionId,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      dragging: false,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handleCommandPointerMove(event: ReactPointerEvent<HTMLElement>) {
+    const drag = commandPointerDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (!drag.dragging) {
+      if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 6) return;
+      drag.dragging = true;
+      draggedCommandIdRef.current = drag.id;
+      commandDropTargetRef.current = null;
+      setDraggedCommandId(drag.id);
+      setCommandDropTarget(null);
+      setSaveMenuCommandId(null);
+    }
+    trackCommandDropTarget(event.clientX, event.clientY, drag.sectionId);
+  }
+
+  function handleCommandPointerUp(event: ReactPointerEvent<HTMLElement>) {
+    const drag = commandPointerDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    if (!drag.dragging) {
+      commandPointerDragRef.current = null;
+      return;
+    }
+
+    event.preventDefault();
+    suppressCommandClickRef.current = true;
+    window.setTimeout(() => { suppressCommandClickRef.current = false; }, 0);
+    trackCommandDropTarget(event.clientX, event.clientY, drag.sectionId);
+    const target = commandDropTargetRef.current;
+    resetCommandPointerDrag();
+
+    if (!target || target.id === drag.id) return;
+    setLibrary((current) => {
+      const commands = sortSavedCommands(current.history.filter((command) => (
+        command.sectionId === drag.sectionId
+      )));
+      const reordered = reorderItems(commands, drag.id, target.id, target.position);
+      const savedOrder = new Map(reordered.map((command, index) => [command.id, index]));
+      return {
+        ...current,
+        history: current.history.map((command) => (
+          command.sectionId === drag.sectionId
+            ? { ...command, savedOrder: savedOrder.get(command.id) ?? command.savedOrder }
+            : command
+        )),
+      };
+    });
+  }
+
+  function handleCommandPointerCancel(event: ReactPointerEvent<HTMLElement>) {
+    const drag = commandPointerDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    resetCommandPointerDrag();
+  }
+
   function submitSection(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!sectionEditor) return;
@@ -892,15 +1010,19 @@ export default function App() {
       flash(`Renamed section to ${name}`);
     } else {
       const id = createLibraryId('section');
-      setLibrary((current) => ({
-        ...current,
-        sections: [...current.sections, { id, name }],
-        history: sectionEditor.commandId
+      setLibrary((current) => {
+        const sections = [...current.sections, { id, name }];
+        const history = sectionEditor.commandId
           ? current.history.map((command) => (
-            command.id === sectionEditor.commandId ? { ...command, sectionId: id } : command
+            command.id === sectionEditor.commandId ? { ...command, sectionId: id, savedOrder: 0 } : command
           ))
-          : current.history,
-      }));
+          : current.history;
+        return {
+          ...current,
+          sections,
+          history: normalizeSavedCommandOrder(history, sections),
+        };
+      });
       setOpenSections((current) => ({ ...current, [id]: true }));
       flash(`Created ${name}`);
     }
@@ -909,13 +1031,15 @@ export default function App() {
 
   function deleteSection(sectionId: string) {
     const section = library.sections.find((item) => item.id === sectionId);
-    setLibrary((current) => ({
-      ...current,
-      sections: current.sections.filter((item) => item.id !== sectionId),
-      history: limitCommandHistory(current.history.map((command) => (
-        command.sectionId === sectionId ? { ...command, sectionId: null, displayName: null } : command
-      ))),
-    }));
+    setLibrary((current) => {
+      const sections = current.sections.filter((item) => item.id !== sectionId);
+      const history = limitCommandHistory(current.history.map((command) => (
+        command.sectionId === sectionId
+          ? { ...command, sectionId: null, displayName: null, savedOrder: null }
+          : command
+      )));
+      return { ...current, sections, history: normalizeSavedCommandOrder(history, sections) };
+    });
     setOpenSections((current) => {
       const next = { ...current };
       delete next[sectionId];
@@ -926,24 +1050,36 @@ export default function App() {
   }
 
   function saveCommandToSection(commandId: string, sectionId: string) {
-    setLibrary((current) => ({
-      ...current,
-      history: current.history.map((command) => (
-        command.id === commandId ? { ...command, sectionId } : command
-      )),
-    }));
+    setLibrary((current) => {
+      const command = current.history.find((item) => item.id === commandId);
+      if (!command || command.sectionId === sectionId) return current;
+      const history = current.history.map((item) => (
+        item.id === commandId
+          ? { ...item, sectionId, savedOrder: Number.MAX_SAFE_INTEGER }
+          : item
+      ));
+      return {
+        ...current,
+        history: normalizeSavedCommandOrder(history, current.sections),
+      };
+    });
     setSaveMenuCommandId(null);
     const section = library.sections.find((item) => item.id === sectionId);
     flash(`Saved to ${section?.name ?? 'section'}`);
   }
 
   function removeCommandFromSection(commandId: string) {
-    setLibrary((current) => ({
-      ...current,
-      history: limitCommandHistory(current.history.map((command) => (
-        command.id === commandId ? { ...command, sectionId: null, displayName: null } : command
-      ))),
-    }));
+    setLibrary((current) => {
+      const history = limitCommandHistory(current.history.map((command) => (
+        command.id === commandId
+          ? { ...command, sectionId: null, displayName: null, savedOrder: null }
+          : command
+      )));
+      return {
+        ...current,
+        history: normalizeSavedCommandOrder(history, current.sections),
+      };
+    });
     flash('Removed from section; kept in Last');
   }
 
@@ -1003,7 +1139,7 @@ export default function App() {
         <div className="tabbar window-drag-area" onMouseDown={startWindowDrag}>
           <div className="tabs" role="tablist" aria-label="Terminal tabs">
             {tabs.map((tab) => (
-              <button
+              <div
                 key={tab.id}
                 data-tab-id={tab.id}
                 className={`tab ${activeTab === tab.id ? 'active' : ''} ${draggedTabId === tab.id ? 'dragging' : ''} ${tabDropTarget?.id === tab.id ? `drop-${tabDropTarget.position}` : ''}`}
@@ -1019,23 +1155,30 @@ export default function App() {
                 onPointerMove={handleTabPointerMove}
                 onPointerUp={handleTabPointerUp}
                 onPointerCancel={handleTabPointerCancel}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' && event.key !== ' ') return;
+                  event.preventDefault();
+                  setActiveTab(tab.id);
+                }}
                 role="tab"
+                tabIndex={activeTab === tab.id ? 0 : -1}
                 aria-selected={activeTab === tab.id}
                 aria-grabbed={draggedTabId === tab.id}
                 title={isDetached ? tab.name : 'Drag to reorder; drag outside the window or double-click to detach'}
               >
                 <span className="tab-terminal">›_</span>
                 <span>{tab.name}</span>
-                <span
+                <button
+                  type="button"
                   className="tab-close"
-                  role="button"
                   aria-label={`Close ${tab.name}`}
+                  onPointerDown={(event) => event.stopPropagation()}
                   onClick={(event) => {
                     event.stopPropagation();
                     void closeTab(tab.id);
                   }}
-                >×</span>
-              </button>
+                >×</button>
+              </div>
             ))}
           </div>
           {!isDetached && <button className="new-tab" onClick={() => void createTab()} aria-label="New terminal tab">+</button>}
@@ -1140,7 +1283,18 @@ export default function App() {
                   {openSections[section.id] && (
                     <div className="command-list">
                       {section.items.length ? section.items.map((command) => (
-                        <article className="command-card" key={`${section.id}-${command.id}`}>
+                        <article
+                          className={`command-card ${section.editable ? 'reorderable' : ''} ${section.editable && draggedCommandId === command.id ? 'dragging' : ''} ${section.editable && commandDropTarget?.id === command.id ? `drop-${commandDropTarget.position}` : ''}`}
+                          data-saved-command-id={section.editable ? command.id : undefined}
+                          data-command-section-id={section.editable ? section.id : undefined}
+                          onPointerDown={section.editable
+                            ? (event) => handleCommandPointerDown(event, command.id, section.id)
+                            : undefined}
+                          onPointerMove={section.editable ? handleCommandPointerMove : undefined}
+                          onPointerUp={section.editable ? handleCommandPointerUp : undefined}
+                          onPointerCancel={section.editable ? handleCommandPointerCancel : undefined}
+                          key={`${section.id}-${command.id}`}
+                        >
                           <div className="save-control">
                             <button
                               className={`command-save ${command.sectionId ? 'active' : ''}`}
@@ -1168,7 +1322,17 @@ export default function App() {
                               </div>
                             )}
                           </div>
-                          <button className="command-text" onClick={() => chooseCommand(command.text)} title={command.text}>
+                          <button
+                            className="command-text"
+                            onClick={() => {
+                              if (suppressCommandClickRef.current) {
+                                suppressCommandClickRef.current = false;
+                                return;
+                              }
+                              chooseCommand(command.text);
+                            }}
+                            title={command.text}
+                          >
                             <code className={section.id !== lastSectionId && command.displayName ? 'command-name' : undefined}>
                               {section.id !== lastSectionId && command.displayName
                                 ? command.displayName
