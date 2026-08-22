@@ -578,9 +578,9 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building RiftDrift");
 
-    application.run(|app, event| {
+    application.run(|_app, _event| {
         #[cfg(target_os = "macos")]
-        if let tauri::RunEvent::Opened { urls } = event {
+        if let tauri::RunEvent::Opened { urls } = _event {
             if let Some(path) = urls
                 .into_iter()
                 .filter_map(|url| url.to_file_path().ok())
@@ -590,11 +590,11 @@ pub fn run() {
                 })
             {
                 let path = path.to_string_lossy().into_owned();
-                if let Ok(mut opened_path) = app.state::<PortableLibraryState>().opened_path.lock()
+                if let Ok(mut opened_path) = _app.state::<PortableLibraryState>().opened_path.lock()
                 {
                     *opened_path = Some(path.clone());
                 }
-                let _ = app.emit("library-file-opened", path);
+                let _ = _app.emit("library-file-opened", path);
             }
         }
     });

@@ -13,7 +13,9 @@ npm ci
 
 ## Windows
 
-Windows installers must be built on Windows. Install the Microsoft C++ Build Tools with the **Desktop development with C++** workload and Microsoft Edge WebView2, then run:
+### Native Windows build
+
+Install the Microsoft C++ Build Tools with the **Desktop development with C++** workload and Microsoft Edge WebView2, then run:
 
 ```powershell
 npm run build:windows
@@ -24,7 +26,33 @@ Artifacts:
 - `src-tauri/target/release/bundle/nsis/RiftDrift_*-setup.exe`
 - `src-tauri/target/release/bundle/msi/RiftDrift_*.msi`
 
-The repository also includes a **Build Windows** GitHub Actions workflow. Run it manually from the Actions tab, or push a tag matching `v*`. Download the `RiftDrift-Windows-x64` artifact after the job finishes. This is the supported way to produce Windows installers while developing on macOS or Linux.
+MSI installers can only be built on Windows.
+
+### Cross-build from macOS
+
+Tauri supports cross-compiling an x64 NSIS `.exe` installer from macOS. Install the prerequisites once:
+
+```bash
+brew install nsis llvm
+rustup target add x86_64-pc-windows-msvc
+cargo install --locked cargo-xwin
+```
+
+Then use the same command:
+
+```bash
+npm run build:windows
+```
+
+Artifact:
+
+- `src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/RiftDrift_*-setup.exe`
+
+The cross-build script checks the prerequisites and automatically adds Homebrew's LLVM directory to `PATH`.
+
+### GitHub Actions
+
+The repository also includes a **Build Windows** GitHub Actions workflow. Run it manually from the Actions tab, or push a tag matching `v*`. Download the `RiftDrift-Windows-x64` artifact after the job finishes. The Windows runner produces both NSIS and MSI installers.
 
 The generated installers are unsigned. Windows may show a SmartScreen warning until the executable and installers are signed with a trusted code-signing certificate.
 

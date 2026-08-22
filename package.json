@@ -9,7 +9,7 @@
     "dev": "tauri dev",
     "build": "tauri build",
     "build:mac": "tauri build --bundles app,dmg",
-    "build:windows": "tauri build --bundles nsis,msi",
+    "build:windows": "node scripts/build-windows.mjs",
     "desktop:web:dev": "vite --config vite.desktop.config.ts",
     "desktop:web:build": "vite build --config vite.desktop.config.ts",
     "check:desktop": "tsc --noEmit --incremental false && cargo check --manifest-path src-tauri/Cargo.toml",

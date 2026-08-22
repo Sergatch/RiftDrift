@@ -18,7 +18,7 @@ Then build the installers for the current operating system:
 npm run build
 ```
 
-On macOS this creates an app bundle and DMG. On Windows it creates NSIS (`.exe`) and MSI (`.msi`) installers. To select a platform explicitly, use `npm run build:mac` or `npm run build:windows` on that operating system.
+On macOS this creates an app bundle and DMG. `npm run build:windows` creates NSIS (`.exe`) and MSI (`.msi`) installers on Windows, or cross-compiles an NSIS installer on macOS after the prerequisites in `BUILDING.md` are installed.
 
 Windows builds can also be produced from any computer with the **Build Windows** GitHub Actions workflow. Its installers are available as a workflow artifact.
 
