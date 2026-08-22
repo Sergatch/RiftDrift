@@ -32,6 +32,7 @@ type TerminalOutput = {
 
 type TerminalPaneHandle = {
   insert: (value: string) => void;
+  focus: () => void;
 };
 
 type LibraryFileResult = { path: string; contents: string | null };
@@ -63,6 +64,16 @@ function PencilIcon() {
 
 function TrashIcon() {
   return <svg aria-hidden="true" viewBox="0 0 16 16"><path d="M3.5 5h9M6 5V3.5h4V5m1.5 0-.6 8h-6l-.6-8M6.8 7v4M9.2 7v4" /></svg>;
+}
+
+function DragHandleIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 12 16">
+      <circle cx="4" cy="4" r="1" /><circle cx="8" cy="4" r="1" />
+      <circle cx="4" cy="8" r="1" /><circle cx="8" cy="8" r="1" />
+      <circle cx="4" cy="12" r="1" /><circle cx="8" cy="12" r="1" />
+    </svg>
+  );
 }
 
 function reorderItems<T extends { id: Id }, Id extends string | number>(
@@ -105,16 +116,26 @@ function TerminalPane({ sessionId, history, onCommand }, ref) {
     knownHistory.current = history;
   }, [history]);
 
-  useImperativeHandle(ref, () => ({
-    insert(value: string) {
-      historyCursor.current = -1;
-      historyDraft.current = '';
-      preferRenderedCommand.current = false;
-      renderedCommand.current = '';
-      terminalRef.current?.paste(value);
+  useImperativeHandle(ref, () => {
+    const focus = () => {
       terminalRef.current?.focus();
-    },
-  }), []);
+      hostRef.current?.querySelector<HTMLTextAreaElement>('.xterm-helper-textarea')?.focus({ preventScroll: true });
+    };
+    return {
+      insert(value: string) {
+        historyCursor.current = -1;
+        historyDraft.current = '';
+        preferRenderedCommand.current = false;
+        renderedCommand.current = '';
+        focus();
+        const terminal = terminalRef.current;
+        if (!terminal) return;
+        terminal.paste(value);
+        focus();
+      },
+      focus,
+    };
+  }, []);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -408,7 +429,6 @@ export default function App() {
   const commandPointerDragRef = useRef<CommandPointerDrag | null>(null);
   const suppressTabClickRef = useRef(false);
   const suppressSectionClickRef = useRef(false);
-  const suppressCommandClickRef = useRef(false);
   const draggedCommandIdRef = useRef<string | null>(null);
   const commandDropTargetRef = useRef<DropTarget<string> | null>(null);
   const [library, setLibrary] = useState<LibraryDocument>(emptyLibraryDocument);
@@ -570,7 +590,8 @@ export default function App() {
     const text = value.trim();
     if (!text) return;
     setLibrary((current) => {
-      const existing = current.history.find((item) => item.text === text);
+      const history = normalizeSavedCommandOrder(current.history, current.sections);
+      const existing = history.find((item) => item.text === text);
       const command = {
         id: existing?.id ?? createLibraryId('command'),
         text,
@@ -580,7 +601,7 @@ export default function App() {
       };
       return {
         ...current,
-        history: limitCommandHistory([command, ...current.history.filter((item) => item.text !== text)]),
+        history: limitCommandHistory([command, ...history.filter((item) => item.text !== text)]),
       };
     });
   }, []);
@@ -912,13 +933,12 @@ export default function App() {
   }
 
   function handleCommandPointerDown(
-    event: ReactPointerEvent<HTMLElement>,
+    event: ReactPointerEvent<HTMLButtonElement>,
     commandId: string,
     sectionId: string,
   ) {
     if (event.button !== 0) return;
-    const target = event.target as HTMLElement;
-    if (target.closest('.command-save, .command-rename, .command-delete, .section-menu')) return;
+    event.stopPropagation();
     commandPointerDragRef.current = {
       id: commandId,
       sectionId,
@@ -930,7 +950,7 @@ export default function App() {
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
-  function handleCommandPointerMove(event: ReactPointerEvent<HTMLElement>) {
+  function handleCommandPointerMove(event: ReactPointerEvent<HTMLButtonElement>) {
     const drag = commandPointerDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     if (!drag.dragging) {
@@ -945,7 +965,7 @@ export default function App() {
     trackCommandDropTarget(event.clientX, event.clientY, drag.sectionId);
   }
 
-  function handleCommandPointerUp(event: ReactPointerEvent<HTMLElement>) {
+  function handleCommandPointerUp(event: ReactPointerEvent<HTMLButtonElement>) {
     const drag = commandPointerDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
@@ -957,8 +977,6 @@ export default function App() {
     }
 
     event.preventDefault();
-    suppressCommandClickRef.current = true;
-    window.setTimeout(() => { suppressCommandClickRef.current = false; }, 0);
     trackCommandDropTarget(event.clientX, event.clientY, drag.sectionId);
     const target = commandDropTargetRef.current;
     resetCommandPointerDrag();
@@ -981,7 +999,7 @@ export default function App() {
     });
   }
 
-  function handleCommandPointerCancel(event: ReactPointerEvent<HTMLElement>) {
+  function handleCommandPointerCancel(event: ReactPointerEvent<HTMLButtonElement>) {
     const drag = commandPointerDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     resetCommandPointerDrag();
@@ -1099,7 +1117,13 @@ export default function App() {
   }
 
   function chooseCommand(command: string) {
-    terminalRef.current?.insert(command);
+    const terminal = terminalRef.current;
+    if (!terminal) {
+      flash('Terminal is not ready yet', 'warning');
+      return;
+    }
+    terminal.insert(command);
+    window.requestAnimationFrame(() => terminalRef.current?.focus());
     flash('Command inserted into terminal');
   }
 
@@ -1287,14 +1311,19 @@ export default function App() {
                           className={`command-card ${section.editable ? 'reorderable' : ''} ${section.editable && draggedCommandId === command.id ? 'dragging' : ''} ${section.editable && commandDropTarget?.id === command.id ? `drop-${commandDropTarget.position}` : ''}`}
                           data-saved-command-id={section.editable ? command.id : undefined}
                           data-command-section-id={section.editable ? section.id : undefined}
-                          onPointerDown={section.editable
-                            ? (event) => handleCommandPointerDown(event, command.id, section.id)
-                            : undefined}
-                          onPointerMove={section.editable ? handleCommandPointerMove : undefined}
-                          onPointerUp={section.editable ? handleCommandPointerUp : undefined}
-                          onPointerCancel={section.editable ? handleCommandPointerCancel : undefined}
                           key={`${section.id}-${command.id}`}
                         >
+                          {section.editable && (
+                            <button
+                              className="command-drag-handle"
+                              onPointerDown={(event) => handleCommandPointerDown(event, command.id, section.id)}
+                              onPointerMove={handleCommandPointerMove}
+                              onPointerUp={handleCommandPointerUp}
+                              onPointerCancel={handleCommandPointerCancel}
+                              aria-label="Reorder command"
+                              title="Drag to reorder command"
+                            ><DragHandleIcon /></button>
+                          )}
                           <div className="save-control">
                             <button
                               className={`command-save ${command.sectionId ? 'active' : ''}`}
@@ -1324,13 +1353,7 @@ export default function App() {
                           </div>
                           <button
                             className="command-text"
-                            onClick={() => {
-                              if (suppressCommandClickRef.current) {
-                                suppressCommandClickRef.current = false;
-                                return;
-                              }
-                              chooseCommand(command.text);
-                            }}
+                            onClick={() => chooseCommand(command.text)}
                             title={command.text}
                           >
                             <code className={section.id !== lastSectionId && command.displayName ? 'command-name' : undefined}>
