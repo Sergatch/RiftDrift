@@ -91,7 +91,7 @@ Saved commands stay named and grouped. Recent commands stay easy to scan. Select
 
 | Platform | Status | Notes |
 | --- | --- | --- |
-| macOS | Primary | Native app and DMG builds, login-shell support, `.riftdrift` file association, and native Open/Save as dialogs. Minimum macOS version: 10.15. |
+| macOS | Primary | Native app and universal Apple Silicon/Intel DMG builds, login-shell support, `.riftdrift` file association, and native Open/Save as dialogs. Minimum macOS version: 10.15. |
 | Windows | Supported | Native PowerShell or configured shell sessions, NSIS and MSI installers, plus an x64 NSIS cross-build from macOS. The in-app `.riftdrift` file picker is not wired up on Windows yet. |
 | Linux | Unspecified | The underlying stack is portable, but Linux is not currently a packaged or tested release target for this project. |
 
@@ -240,7 +240,7 @@ npm run build:mac
 npm run build:windows
 ```
 
-The **Build Windows** GitHub Actions workflow always produces an Actions artifact. When a tag matching `v*` is pushed, it also publishes a [GitHub Release](https://github.com/Sergatch/RiftDrift/releases/latest) with downloadable NSIS and MSI installers and automatically generated release notes.
+The **Build Installers** GitHub Actions workflow produces separate Windows and macOS artifacts. When a tag matching `v*` is pushed, it publishes a [GitHub Release](https://github.com/Sergatch/RiftDrift/releases/latest) containing the universal macOS DMG, Windows NSIS and MSI installers, and automatically generated release notes.
 
 Before a release, keep the version aligned in `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json`. Signing credentials should only be supplied through the local environment or CI secrets and must never be committed.
 

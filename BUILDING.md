@@ -50,10 +50,6 @@ Artifact:
 
 The cross-build script checks the prerequisites and automatically adds Homebrew's LLVM directory to `PATH`.
 
-### GitHub Actions
-
-The repository also includes a **Build Windows** GitHub Actions workflow. Run it manually from the Actions tab to produce a temporary `RiftDrift-Windows-x64` artifact. Push a tag matching `v*` to build the same NSIS and MSI installers and publish them in a permanent GitHub Release with automatically generated release notes.
-
 The generated installers are unsigned. Windows may show a SmartScreen warning until the executable and installers are signed with a trusted code-signing certificate.
 
 ## macOS
@@ -116,6 +112,14 @@ Then run:
 ```bash
 npx tauri build --target universal-apple-darwin --bundles dmg
 ```
+
+## GitHub Actions releases
+
+The repository includes a **Build Installers** workflow that builds Windows x64 NSIS/MSI installers and a universal macOS DMG for Apple Silicon and Intel.
+
+Run the workflow manually from the Actions tab to produce temporary `RiftDrift-Windows-x64` and `RiftDrift-macOS-Universal` artifacts. Push a tag matching `v*` to publish all three installers in a permanent GitHub Release with automatically generated release notes.
+
+The macOS CI build is ad-hoc signed. It is suitable for local installation, but Gatekeeper may warn users because the app is not signed with a Developer ID certificate or notarized by Apple.
 
 ## Versions
 
