@@ -9,6 +9,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/Sergatch/RiftDrift/releases/latest"><img src="https://img.shields.io/badge/download-latest_release-7c3aed" alt="Download the latest release"></a>
   <img src="https://img.shields.io/badge/version-0.1.0-7c3aed" alt="Version 0.1.0">
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-17121d" alt="macOS and Windows">
 </p>
@@ -239,7 +240,7 @@ npm run build:mac
 npm run build:windows
 ```
 
-The **Build Windows** GitHub Actions workflow also produces downloadable NSIS and MSI artifacts. It runs manually or when a tag matching `v*` is pushed.
+The **Build Windows** GitHub Actions workflow always produces an Actions artifact. When a tag matching `v*` is pushed, it also publishes a [GitHub Release](https://github.com/Sergatch/RiftDrift/releases/latest) with downloadable NSIS and MSI installers and automatically generated release notes.
 
 Before a release, keep the version aligned in `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json`. Signing credentials should only be supplied through the local environment or CI secrets and must never be committed.
 

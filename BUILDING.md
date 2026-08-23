@@ -52,7 +52,7 @@ The cross-build script checks the prerequisites and automatically adds Homebrew'
 
 ### GitHub Actions
 
-The repository also includes a **Build Windows** GitHub Actions workflow. Run it manually from the Actions tab, or push a tag matching `v*`. Download the `RiftDrift-Windows-x64` artifact after the job finishes. The Windows runner produces both NSIS and MSI installers.
+The repository also includes a **Build Windows** GitHub Actions workflow. Run it manually from the Actions tab to produce a temporary `RiftDrift-Windows-x64` artifact. Push a tag matching `v*` to build the same NSIS and MSI installers and publish them in a permanent GitHub Release with automatically generated release notes.
 
 The generated installers are unsigned. Windows may show a SmartScreen warning until the executable and installers are signed with a trusted code-signing certificate.
 
