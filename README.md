@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/Sergatch/RiftDrift/releases/latest"><img src="https://img.shields.io/badge/download-latest_release-7c3aed" alt="Download the latest release"></a>
-  <img src="https://img.shields.io/badge/version-0.1.0-7c3aed" alt="Version 0.1.0">
+  <img src="https://img.shields.io/badge/version-0.1.2-7c3aed" alt="Version 0.1.2">
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-17121d" alt="macOS and Windows">
 </p>
 

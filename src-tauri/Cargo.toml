@@ -1,6 +1,6 @@
 [package]
 name = "riftdrift"
-version = "0.1.0"
+version = "0.1.2"
 description = "A command-line workspace with a built-in command library"
 authors = ["RiftDrift"]
 license = "Proprietary"
