@@ -12,9 +12,7 @@ use std::{
     thread,
 };
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
-
-#[cfg(target_os = "macos")]
-use std::process::Command;
+use tauri_plugin_dialog::{DialogExt, FilePath};
 
 const MAX_SCROLLBACK_BYTES: usize = 2 * 1024 * 1024;
 const LIBRARY_FILE_NAME: &str = "RiftDrift Library.riftdrift";
@@ -224,49 +222,33 @@ fn save_library_file(
     Ok(resolved.to_string_lossy().into_owned())
 }
 
-#[cfg(target_os = "macos")]
-fn macos_file_dialog(script: &str) -> Result<Option<String>, String> {
-    let output = Command::new("osascript")
-        .args(["-e", script])
-        .output()
-        .map_err(|error| format!("Could not open the file picker: {error}"))?;
-
-    if !output.status.success() {
-        let message = String::from_utf8_lossy(&output.stderr);
-        if message.contains("-128") || message.contains("User canceled") {
-            return Ok(None);
-        }
-        return Err(format!("The file picker failed: {}", message.trim()));
-    }
-
-    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    Ok((!path.is_empty()).then_some(path))
+fn dialog_path(path: FilePath) -> Result<String, String> {
+    path.into_path()
+        .map(|path| path.to_string_lossy().into_owned())
+        .map_err(|error| format!("The selected file path is not available: {error}"))
 }
 
 #[tauri::command]
-fn pick_library_file() -> Result<Option<String>, String> {
-    #[cfg(target_os = "macos")]
-    {
-        return macos_file_dialog(
-            "POSIX path of (choose file with prompt \"Open a RiftDrift library\")",
-        );
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    Err("The native library picker is currently available on macOS only".to_string())
+async fn pick_library_file(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    app.dialog()
+        .file()
+        .set_title("Open a RiftDrift library")
+        .add_filter("RiftDrift Library", &["riftdrift"])
+        .blocking_pick_file()
+        .map(dialog_path)
+        .transpose()
 }
 
 #[tauri::command]
-fn pick_library_save_path() -> Result<Option<String>, String> {
-    #[cfg(target_os = "macos")]
-    {
-        return macos_file_dialog(
-            "POSIX path of (choose file name with prompt \"Save the portable RiftDrift library\" default name \"RiftDrift Library.riftdrift\")",
-        );
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    Err("The native library picker is currently available on macOS only".to_string())
+async fn pick_library_save_path(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    app.dialog()
+        .file()
+        .set_title("Save the portable RiftDrift library")
+        .set_file_name(LIBRARY_FILE_NAME)
+        .add_filter("RiftDrift Library", &["riftdrift"])
+        .blocking_save_file()
+        .map(dialog_path)
+        .transpose()
 }
 
 #[tauri::command]
@@ -549,6 +531,7 @@ pub fn run() {
     };
 
     let application = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(TerminalState::default())
         .manage(library_state)
         .setup(|app| {
