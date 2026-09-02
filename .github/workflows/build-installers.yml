@@ -10,6 +10,62 @@ permissions:
   contents: read
 
 jobs:
+  build-linux:
+    name: Linux x64 packages
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check desktop application
+        run: npm run check:desktop
+
+      - name: Build AppImage, DEB, and RPM packages
+        run: npm run build:linux
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: RiftDrift-Linux-x64
+          if-no-files-found: error
+          path: |
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/rpm/*.rpm
+
   build-windows:
     name: Windows x64 installers
     runs-on: windows-latest
@@ -94,6 +150,7 @@ jobs:
     name: Publish GitHub Release
     if: startsWith(github.ref, 'refs/tags/v')
     needs:
+      - build-linux
       - build-windows
       - build-macos
     runs-on: ubuntu-latest
@@ -108,6 +165,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: RiftDrift-Windows-x64
+          path: release-assets
+
+      - name: Download Linux packages
+        uses: actions/download-artifact@v4
+        with:
+          name: RiftDrift-Linux-x64
           path: release-assets
 
       - name: Download macOS DMG

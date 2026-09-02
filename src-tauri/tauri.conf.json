@@ -48,7 +48,7 @@
       }
     ],
     "shortDescription": "A terminal with your command library built in.",
-    "longDescription": "RiftDrift is a native command-line workspace for macOS and Windows with tabs, detachable windows, command history, custom sections, and portable library files.",
+    "longDescription": "RiftDrift is a native command-line workspace for macOS, Windows, and Linux with tabs, detachable windows, command history, custom sections, and portable library files.",
     "copyright": "Copyright © 2026 RiftDrift",
     "icon": [
       "icons/32x32.png",

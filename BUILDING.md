@@ -11,6 +11,45 @@ Then install the JavaScript dependencies:
 npm ci
 ```
 
+## Linux
+
+Linux packages must be built on Linux. On Debian 12 or Ubuntu 22.04 and newer, install the Tauri system dependencies:
+
+```bash
+sudo apt update
+sudo apt install libwebkit2gtk-4.1-dev \
+  build-essential \
+  curl \
+  wget \
+  file \
+  libxdo-dev \
+  libssl-dev \
+  libayatana-appindicator3-dev \
+  librsvg2-dev \
+  patchelf
+```
+
+Then build all supported Linux package formats:
+
+```bash
+npm run build:linux
+```
+
+Artifacts:
+
+- `src-tauri/target/release/bundle/appimage/RiftDrift_*.AppImage`
+- `src-tauri/target/release/bundle/deb/RiftDrift_*.deb`
+- `src-tauri/target/release/bundle/rpm/RiftDrift-*.rpm`
+
+The AppImage is the most portable option. Make it executable before launching it:
+
+```bash
+chmod +x RiftDrift_*.AppImage
+./RiftDrift_*.AppImage
+```
+
+Linux binaries depend on the glibc version of the build system. The GitHub Actions build therefore uses Ubuntu 22.04 as a stable compatibility baseline instead of `ubuntu-latest`.
+
 ## Windows
 
 ### Native Windows build
@@ -115,9 +154,9 @@ npx tauri build --target universal-apple-darwin --bundles dmg
 
 ## GitHub Actions releases
 
-The repository includes a **Build Installers** workflow that builds Windows x64 NSIS/MSI installers and a universal macOS DMG for Apple Silicon and Intel.
+The repository includes a **Build Installers** workflow that builds Linux x64 AppImage/DEB/RPM packages, Windows x64 NSIS/MSI installers, and a universal macOS DMG for Apple Silicon and Intel.
 
-Run the workflow manually from the Actions tab to produce temporary `RiftDrift-Windows-x64` and `RiftDrift-macOS-Universal` artifacts. Push a tag matching `v*` to publish all three installers in a permanent GitHub Release with automatically generated release notes.
+Run the workflow manually from the Actions tab to produce temporary `RiftDrift-Linux-x64`, `RiftDrift-Windows-x64`, and `RiftDrift-macOS-Universal` artifacts. Push a tag matching `v*` to publish all packages in a permanent GitHub Release with automatically generated release notes.
 
 The macOS CI build is ad-hoc signed. It is suitable for local installation, but Gatekeeper may warn users because the app is not signed with a Developer ID certificate or notarized by Apple.
 

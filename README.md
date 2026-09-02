@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/Sergatch/RiftDrift/releases/latest"><img src="https://img.shields.io/badge/download-latest_release-7c3aed" alt="Download the latest release"></a>
   <img src="https://img.shields.io/badge/version-0.1.2-7c3aed" alt="Version 0.1.2">
-  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-17121d" alt="macOS and Windows">
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-17121d" alt="macOS, Windows, and Linux">
 </p>
 
 <p align="center">
@@ -93,7 +93,7 @@ Saved commands stay named and grouped. Recent commands stay easy to scan. Select
 | --- | --- | --- |
 | macOS | Primary | Native app and universal Apple Silicon/Intel DMG builds, login-shell support, `.riftdrift` file association, and native Open/Save as dialogs. Minimum macOS version: 10.15. |
 | Windows | Supported | Native PowerShell or configured shell sessions, NSIS and MSI installers, plus an x64 NSIS cross-build from macOS. The in-app `.riftdrift` file picker is not wired up on Windows yet. |
-| Linux | Unspecified | The underlying stack is portable, but Linux is not currently a packaged or tested release target for this project. |
+| Linux | Supported | x64 AppImage, DEB, and RPM packages built and checked on Ubuntu 22.04 in GitHub Actions. Uses the configured login shell and WebKitGTK 4.1. |
 
 Local macOS builds are ad-hoc signed. Windows installers are unsigned. Expect Gatekeeper or SmartScreen warnings until a build is signed for distribution.
 
@@ -128,12 +128,13 @@ Tauri starts the Vite frontend automatically and opens RiftDrift as a desktop ap
 | `npm run dev` | Run the native desktop app in development mode. |
 | `npm run build` | Build release bundles for the current operating system. |
 | `npm run build:mac` | Build the macOS `.app` bundle and DMG. |
+| `npm run build:linux` | Build x64 AppImage, DEB, and RPM packages on Linux. |
 | `npm run build:windows` | Build NSIS/MSI on Windows, or cross-build x64 NSIS from macOS. |
 | `npm run check:desktop` | Run TypeScript checking and `cargo check`. |
 | `npm run lint` | Run ESLint across the project. |
 | `npm run site:dev` | Run the original browser prototype. It demonstrates the interface but does not provide a real shell. |
 
-See [BUILDING.md](BUILDING.md) for Windows toolchains, macOS signing and notarization, universal Apple Silicon/Intel builds, CI artifacts, and exact output paths.
+See [BUILDING.md](BUILDING.md) for Linux system packages, Windows toolchains, macOS signing and notarization, universal Apple Silicon/Intel builds, CI artifacts, and exact output paths.
 
 ## Everyday use
 
@@ -217,7 +218,7 @@ desktop/          native desktop frontend
 src-tauri/        Rust backend and Tauri configuration
 app/              browser prototype
 scripts/          cross-platform build helpers
-.github/workflows Windows CI build
+.github/workflows multi-platform release CI
 public/           shared visual assets
 ```
 
@@ -235,12 +236,15 @@ The short version:
 # macOS app + DMG
 npm run build:mac
 
+# Linux x64 AppImage + DEB + RPM (run on Linux)
+npm run build:linux
+
 # Windows NSIS + MSI when run on Windows
 # Windows x64 NSIS when cross-built from macOS
 npm run build:windows
 ```
 
-The **Build Installers** GitHub Actions workflow produces separate Windows and macOS artifacts. When a tag matching `v*` is pushed, it publishes a [GitHub Release](https://github.com/Sergatch/RiftDrift/releases/latest) containing the universal macOS DMG, Windows NSIS and MSI installers, and automatically generated release notes.
+The **Build Installers** GitHub Actions workflow produces separate Linux, Windows, and macOS artifacts. When a tag matching `v*` is pushed, it publishes a [GitHub Release](https://github.com/Sergatch/RiftDrift/releases/latest) containing the Linux AppImage, DEB, and RPM packages, the universal macOS DMG, Windows NSIS and MSI installers, and automatically generated release notes.
 
 Before a release, keep the version aligned in `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json`. Signing credentials should only be supplied through the local environment or CI secrets and must never be committed.
 

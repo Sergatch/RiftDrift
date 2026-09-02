@@ -9,6 +9,7 @@
     "dev": "tauri dev",
     "build": "tauri build",
     "build:mac": "tauri build --bundles app,dmg",
+    "build:linux": "tauri build --bundles appimage,deb,rpm",
     "build:windows": "node scripts/build-windows.mjs",
     "desktop:web:dev": "vite --config vite.desktop.config.ts",
     "desktop:web:build": "vite build --config vite.desktop.config.ts",
